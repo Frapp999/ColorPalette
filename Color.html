@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Palette de Couleurs LED</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+            text-align: center;
+        }
+
+        .color-picker-container {
+            position: relative;
+            width: 90%;
+            max-width: 500px;
+            height: 50vh;
+            margin-bottom: 20px;
+            overflow: hidden;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .color-picker {
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            background: linear-gradient(to right, red, yellow, lime, cyan, blue, magenta, red);
+            background-size: 100% 100%;
+            position: relative;
+        }
+
+        .gradient-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(0,0,0,1));
+        }
+
+        .cursor {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            box-shadow: 0 0 0 1px black;
+        }
+
+        .color-preview {
+            width: 100%;
+            max-width: 500px;
+            height: 80px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            background-color: rgb(255, 0, 0);
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+            text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+        }
+
+        .buttons {
+            display: flex;
+            gap: 20px;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #4CAF50;
+            color: white;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #45a049;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        #cancel-btn {
+            background-color: #f44336;
+        }
+
+        #cancel-btn:hover {
+            background-color: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+    <h1>Palette de Couleurs LED</h1>
+    
+    <div class="color-picker-container">
+        <div class="color-picker" id="colorPicker">
+            <div class="gradient-overlay"></div>
+            <div class="cursor" id="cursor"></div>
+        </div>
+    </div>
+    
+    <div class="color-preview" id="colorPreview">
+        RGB(255, 0, 0)
+    </div>
+    
+    <div class="buttons">
+        <button id="confirm-btn">Confirmer</button>
+        <button id="cancel-btn">Annuler</button>
+    </div>
+
+    <script>
+        // Variables pour le gestionnaire d'événements tactiles
+        let colorPicker = document.getElementById('colorPicker');
+        let cursor = document.getElementById('cursor');
+        let colorPreview = document.getElementById('colorPreview');
+        let confirmBtn = document.getElementById('confirm-btn');
+        let cancelBtn = document.getElementById('cancel-btn');
+        
+        // Variables pour la couleur
+        let currentColor = { r: 255, g: 0, b: 0 };
+        let isSelecting = false;
+        
+        // Initialisation de la position du curseur
+        cursor.style.left = '0%';
+        cursor.style.top = '0%';
+        
+        // Fonction pour obtenir la couleur à partir des coordonnées
+        function getColorFromPosition(x, y) {
+            // Calculer la teinte (H) à partir de x (0-360 degrés)
+            let h = (x / colorPicker.offsetWidth) * 360;
+            
+            // Calculer la luminosité (L) à partir de y (0-100%)
+            let l = 100 - (y / colorPicker.offsetHeight) * 100;
+            
+            // Saturation fixe
+            let s = 100;
+            
+            // Convertir HSL en RGB
+            return hslToRgb(h / 360, s / 100, l / 100);
+        }
+        
+        // Fonction pour convertir HSL en RGB
+        function hslToRgb(h, s, l) {
+            let r, g, b;
+            
+            if (s === 0) {
+                r = g = b = l; // achromatique
+            } else {
+                const hue2rgb = (p, q, t) => {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                };
+                
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+            
+            return {
+                r: Math.round(r * 255),
+                g: Math.round(g * 255),
+                b: Math.round(b * 255)
+            };
+        }
+        
+        // Fonction pour mettre à jour la prévisualisation de couleur
+        function updateColorPreview(color) {
+            currentColor = color;
+            colorPreview.style.backgroundColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
+            colorPreview.textContent = `RGB(${color.r}, ${color.g}, ${color.b})`;
+            
+            // Choisir la couleur du texte en fonction de la luminosité du fond
+            const brightness = (color.r * 299 + color.g * 587 + color.b * 114) / 1000;
+            colorPreview.style.color = brightness > 125 ? 'black' : 'white';
+        }
+        
+        // Fonction pour gérer le déplacement du curseur
+        function handleCursorMove(clientX, clientY) {
+            const rect = colorPicker.getBoundingClientRect();
+            
+            // Calculer la position relative dans la palette (0-100%)
+            let x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+            let y = Math.max(0, Math.min(clientY - rect.top, rect.height));
+            
+            // Mettre à jour la position du curseur
+            cursor.style.left = `${x}px`;
+            cursor.style.top = `${y}px`;
+            
+            // Obtenir et mettre à jour la couleur
+            const color = getColorFromPosition(x, y);
+            updateColorPreview(color);
+            
+            // Envoyer la couleur au bot Telegram via postMessage
+            try {
+                // Format message pour Telegram WebApp
+                window.Telegram.WebApp.sendData(JSON.stringify({
+                    action: 'updateColor',
+                    color: {
+                        r: color.r,
+                        g: color.g,
+                        b: color.b
+                    }
+                }));
+            } catch (e) {
+                console.log('Communication avec Telegram impossible:', e);
+            }
+        }
+        
+        // Gestionnaires d'événements pour la souris
+        colorPicker.addEventListener('mousedown', function(e) {
+            isSelecting = true;
+            handleCursorMove(e.clientX, e.clientY);
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (isSelecting) {
+                handleCursorMove(e.clientX, e.clientY);
+            }
+        });
+        
+        document.addEventListener('mouseup', function() {
+            isSelecting = false;
+        });
+        
+        // Gestionnaires d'événements pour le tactile
+        colorPicker.addEventListener('touchstart', function(e) {
+            e.preventDefault(); // Empêcher le scroll
+            isSelecting = true;
+            handleCursorMove(e.touches[0].clientX, e.touches[0].clientY);
+        });
+        
+        document.addEventListener('touchmove', function(e) {
+            if (isSelecting) {
+                e.preventDefault(); // Empêcher le scroll
+                handleCursorMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        });
+        
+        document.addEventListener('touchend', function() {
+            isSelecting = false;
+        });
+        
+        // Gestionnaire pour le bouton de confirmation
+        confirmBtn.addEventListener('click', function() {
+            try {
+                // Si ouvert depuis Telegram, envoyer la couleur et fermer
+                if (window.Telegram && window.Telegram.WebApp) {
+                    window.Telegram.WebApp.sendData(JSON.stringify({
+                        action: 'confirmColor',
+                        color: currentColor
+                    }));
+                    window.Telegram.WebApp.close();
+                } else {
+                    // Sinon, afficher un message de confirmation
+                    alert(`Couleur confirmée: RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`);
+                    
+                    // Tenter d'envoyer au botTelegram via localStorage (comme solution de secours)
+                    localStorage.setItem('selectedColor', JSON.stringify(currentColor));
+                }
+            } catch (e) {
+                console.error('Erreur lors de la confirmation:', e);
+                alert(`Couleur sélectionnée: RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`);
+            }
+        });
+        
+        // Gestionnaire pour le bouton d'annulation
+        cancelBtn.addEventListener('click', function() {
+            try {
+                // Si ouvert depuis Telegram, fermer sans envoyer de données
+                if (window.Telegram && window.Telegram.WebApp) {
+                    window.Telegram.WebApp.close();
+                } else {
+                    // Sinon, simplement rafraîchir la page
+                    window.location.reload();
+                }
+            } catch (e) {
+                console.error('Erreur lors de l\'annulation:', e);
+                window.location.href = 'about:blank';  // Fermer la page
+            }
+        });
+        
+        // Initialisation
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialiser avec la couleur par défaut
+            updateColorPreview(currentColor);
+            
+            // Détection de Telegram WebApp
+            if (window.Telegram && window.Telegram.WebApp) {
+                // Configurer l'environnement Telegram WebApp
+                window.Telegram.WebApp.ready();
+                window.Telegram.WebApp.expand();
+            }
+        });
+    </script>
+</body>
+</html>
