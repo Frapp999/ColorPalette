@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Palette de Couleurs LED</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -115,10 +116,75 @@
         #cancel-btn:hover {
             background-color: #d32f2f;
         }
+
+        .mode-switch {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        #mode-label {
+            font-size: 16px;
+            color: #333;
+        }
     </style>
 </head>
 <body>
     <h1>Palette de Couleurs LED</h1>
+    
+    <div class="mode-switch">
+        <label class="switch">
+            <input type="checkbox" id="real-time-toggle">
+            <span class="slider"></span>
+        </label>
+        <span id="mode-label">Mode temps réel: désactivé</span>
+    </div>
     
     <div class="color-picker-container">
         <div class="color-picker" id="colorPicker">
@@ -143,14 +209,27 @@
         let colorPreview = document.getElementById('colorPreview');
         let confirmBtn = document.getElementById('confirm-btn');
         let cancelBtn = document.getElementById('cancel-btn');
+        let realTimeToggle = document.getElementById('real-time-toggle');
+        let modeLabel = document.getElementById('mode-label');
         
         // Variables pour la couleur
         let currentColor = { r: 255, g: 0, b: 0 };
         let isSelecting = false;
+        let isRealTimeMode = false;
+        let lastUpdateTime = 0;
+        const UPDATE_THROTTLE = 200; // Limiter les mises à jour à toutes les 200ms en mode temps réel
         
         // Initialisation de la position du curseur
         cursor.style.left = '0%';
         cursor.style.top = '0%';
+        
+        // Mode temps réel
+        realTimeToggle.addEventListener('change', function() {
+            isRealTimeMode = this.checked;
+            modeLabel.textContent = isRealTimeMode ? 
+                "Mode temps réel: activé" : 
+                "Mode temps réel: désactivé";
+        });
         
         // Fonction pour obtenir la couleur à partir des coordonnées
         function getColorFromPosition(x, y) {
@@ -206,6 +285,33 @@
             // Choisir la couleur du texte en fonction de la luminosité du fond
             const brightness = (color.r * 299 + color.g * 587 + color.b * 114) / 1000;
             colorPreview.style.color = brightness > 125 ? 'black' : 'white';
+            
+            // En mode temps réel, envoyer la couleur immédiatement
+            const now = Date.now();
+            if (isRealTimeMode && now - lastUpdateTime > UPDATE_THROTTLE) {
+                sendColorToTelegram('updateColor', color);
+                lastUpdateTime = now;
+            }
+        }
+        
+        // Fonction pour envoyer la couleur au bot Telegram
+        function sendColorToTelegram(action, color) {
+            try {
+                if (window.Telegram && window.Telegram.WebApp) {
+                    window.Telegram.WebApp.sendData(JSON.stringify({
+                        action: action,
+                        color: color
+                    }));
+                    console.log(`Envoi de la couleur (${action}): RGB(${color.r}, ${color.g}, ${color.b})`);
+                    return true;
+                } else {
+                    console.log('API Telegram WebApp non disponible');
+                    return false;
+                }
+            } catch (e) {
+                console.error('Erreur lors de l\'envoi de la couleur:', e);
+                return false;
+            }
         }
         
         // Fonction pour gérer le déplacement du curseur
@@ -223,21 +329,6 @@
             // Obtenir et mettre à jour la couleur
             const color = getColorFromPosition(x, y);
             updateColorPreview(color);
-            
-            // Envoyer la couleur au bot Telegram via postMessage
-            try {
-                // Format message pour Telegram WebApp
-                window.Telegram.WebApp.sendData(JSON.stringify({
-                    action: 'updateColor',
-                    color: {
-                        r: color.r,
-                        g: color.g,
-                        b: color.b
-                    }
-                }));
-            } catch (e) {
-                console.log('Communication avec Telegram impossible:', e);
-            }
         }
         
         // Gestionnaires d'événements pour la souris
@@ -276,40 +367,24 @@
         
         // Gestionnaire pour le bouton de confirmation
         confirmBtn.addEventListener('click', function() {
-            try {
-                // Si ouvert depuis Telegram, envoyer la couleur et fermer
+            if (sendColorToTelegram('confirmColor', currentColor)) {
+                // Fermer l'application web Telegram si disponible
                 if (window.Telegram && window.Telegram.WebApp) {
-                    window.Telegram.WebApp.sendData(JSON.stringify({
-                        action: 'confirmColor',
-                        color: currentColor
-                    }));
                     window.Telegram.WebApp.close();
                 } else {
-                    // Sinon, afficher un message de confirmation
                     alert(`Couleur confirmée: RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`);
-                    
-                    // Tenter d'envoyer au botTelegram via localStorage (comme solution de secours)
-                    localStorage.setItem('selectedColor', JSON.stringify(currentColor));
                 }
-            } catch (e) {
-                console.error('Erreur lors de la confirmation:', e);
+            } else {
                 alert(`Couleur sélectionnée: RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`);
             }
         });
         
         // Gestionnaire pour le bouton d'annulation
         cancelBtn.addEventListener('click', function() {
-            try {
-                // Si ouvert depuis Telegram, fermer sans envoyer de données
-                if (window.Telegram && window.Telegram.WebApp) {
-                    window.Telegram.WebApp.close();
-                } else {
-                    // Sinon, simplement rafraîchir la page
-                    window.location.reload();
-                }
-            } catch (e) {
-                console.error('Erreur lors de l\'annulation:', e);
-                window.location.href = 'about:blank';  // Fermer la page
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.close();
+            } else {
+                window.location.reload();
             }
         });
         
@@ -323,6 +398,9 @@
                 // Configurer l'environnement Telegram WebApp
                 window.Telegram.WebApp.ready();
                 window.Telegram.WebApp.expand();
+                console.log('Telegram WebApp initialisé');
+            } else {
+                console.log('Telegram WebApp non disponible - mode démo');
             }
         });
     </script>
