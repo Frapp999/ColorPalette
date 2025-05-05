@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Palette de Couleurs LED</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -183,6 +186,38 @@
             overflow-y: auto;
             display: none; /* Caché par défaut */
         }
+        
+        /* Historique des couleurs */
+        .color-history {
+            width: 90%;
+            max-width: 500px;
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .color-history-item {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #ddd;
+            transition: transform 0.2s;
+        }
+        
+        .color-history-item:hover {
+            transform: scale(1.1);
+            border-color: #999;
+        }
+        
+        .status-message {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            height: 20px;
+        }
     </style>
 </head>
 <body>
@@ -212,10 +247,29 @@
         <button id="cancel-btn">Annuler</button>
     </div>
     
+    <div class="status-message" id="status-message"></div>
+    
+    <div class="color-history" id="color-history"></div>
+    
     <!-- Zone de débogage cachée -->
     <div class="debug-container" id="debug-container"></div>
 
     <script>
+        // Configuration Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDX32GbcOJYMiXRFpNUZZO-lUyKGEnJYdQ",
+            authDomain: "lumiere-7cb10.firebaseapp.com",
+            databaseURL: "https://lumiere-7cb10-default-rtdb.firebaseio.com",
+            projectId: "lumiere-7cb10",
+            storageBucket: "lumiere-7cb10.appspot.com",
+            messagingSenderId: "709346079084",
+            appId: "1:709346079084:web:e1e33ad974572f9a30e69e"
+        };
+        
+        // Initialiser Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
         // Variables pour le gestionnaire d'événements tactiles
         let colorPicker = document.getElementById('colorPicker');
         let cursor = document.getElementById('cursor');
@@ -224,6 +278,8 @@
         let cancelBtn = document.getElementById('cancel-btn');
         let realtimeSwitch = document.getElementById('realtime-switch');
         let debugContainer = document.getElementById('debug-container');
+        let statusMessage = document.getElementById('status-message');
+        let colorHistory = document.getElementById('color-history');
         
         // Variables pour la couleur
         let currentColor = { r: 255, g: 0, b: 0 };
@@ -231,6 +287,7 @@
         let isRealtime = false;
         let lastUpdateTime = 0;
         const UPDATE_THROTTLE = 100; // Limiter les mises à jour à 100ms
+        const MAX_HISTORY = 8; // Nombre maximum de couleurs dans l'historique
         
         // Fonction pour logger les informations de débogage
         function logDebug(message) {
@@ -247,6 +304,140 @@
                 debugContainer.appendChild(logEntry);
                 debugContainer.scrollTop = debugContainer.scrollHeight;
             }
+        }
+        
+        // Fonction pour sauvegarder la couleur dans Firebase
+        function saveColorToFirebase(color) {
+            try {
+                // Référence à la couleur actuelle
+                const currentColorRef = database.ref('currentColor');
+                
+                // Enregistrer la couleur actuelle
+                currentColorRef.set({
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+                
+                // Ajouter à l'historique des couleurs
+                const historyRef = database.ref('colorHistory').push();
+                historyRef.set({
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+                
+                logDebug(`Couleur enregistrée dans Firebase: RGB(${color.r}, ${color.g}, ${color.b})`);
+                
+                // Afficher un message de statut
+                showStatusMessage("✅ Couleur enregistrée!");
+                
+                return true;
+            } catch (e) {
+                logDebug(`Erreur lors de l'enregistrement dans Firebase: ${e.message}`);
+                showStatusMessage("❌ Erreur lors de l'enregistrement");
+                return false;
+            }
+        }
+        
+        // Fonction pour charger la dernière couleur depuis Firebase
+        function loadLastColorFromFirebase() {
+            try {
+                const currentColorRef = database.ref('currentColor');
+                currentColorRef.once('value').then((snapshot) => {
+                    const data = snapshot.val();
+                    if (data && data.r !== undefined && data.g !== undefined && data.b !== undefined) {
+                        const loadedColor = {
+                            r: data.r,
+                            g: data.g,
+                            b: data.b
+                        };
+                        logDebug(`Couleur chargée depuis Firebase: RGB(${loadedColor.r}, ${loadedColor.g}, ${loadedColor.b})`);
+                        updateColorPreview(loadedColor);
+                        
+                        // Positionner le curseur en fonction de la couleur chargée
+                        const hsl = rgbToHsl(loadedColor.r, loadedColor.g, loadedColor.b);
+                        const x = hsl.h * colorPicker.offsetWidth;
+                        const y = (1 - hsl.l) * colorPicker.offsetHeight;
+                        cursor.style.left = `${x}px`;
+                        cursor.style.top = `${y}px`;
+                        
+                        showStatusMessage("Dernière couleur chargée");
+                    }
+                });
+            } catch (e) {
+                logDebug(`Erreur lors du chargement depuis Firebase: ${e.message}`);
+            }
+        }
+        
+        // Fonction pour charger l'historique des couleurs
+        function loadColorHistory() {
+            try {
+                const historyRef = database.ref('colorHistory').orderByChild('timestamp').limitToLast(MAX_HISTORY);
+                historyRef.once('value').then((snapshot) => {
+                    // Vider l'historique actuel
+                    colorHistory.innerHTML = '';
+                    
+                    // Tableau pour stocker les couleurs (pour pouvoir les inverser)
+                    const colors = [];
+                    
+                    // Collecter les couleurs
+                    snapshot.forEach((childSnapshot) => {
+                        const data = childSnapshot.val();
+                        if (data && data.r !== undefined && data.g !== undefined && data.b !== undefined) {
+                            colors.push({
+                                key: childSnapshot.key,
+                                r: data.r,
+                                g: data.g,
+                                b: data.b
+                            });
+                        }
+                    });
+                    
+                    // Inverser l'ordre pour avoir les plus récentes en premier
+                    colors.reverse();
+                    
+                    // Ajouter les couleurs à l'interface
+                    colors.forEach(color => {
+                        const colorItem = document.createElement('div');
+                        colorItem.className = 'color-history-item';
+                        colorItem.style.backgroundColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                        colorItem.title = `RGB(${color.r}, ${color.g}, ${color.b})`;
+                        
+                        // Ajouter un gestionnaire d'événements pour sélectionner cette couleur
+                        colorItem.addEventListener('click', () => {
+                            updateColorPreview({
+                                r: color.r,
+                                g: color.g,
+                                b: color.b
+                            });
+                            
+                            // Mettre à jour la position du curseur
+                            const hsl = rgbToHsl(color.r, color.g, color.b);
+                            const x = hsl.h * colorPicker.offsetWidth;
+                            const y = (1 - hsl.l) * colorPicker.offsetHeight;
+                            cursor.style.left = `${x}px`;
+                            cursor.style.top = `${y}px`;
+                        });
+                        
+                        colorHistory.appendChild(colorItem);
+                    });
+                    
+                    logDebug(`Historique chargé: ${colors.length} couleurs`);
+                });
+            } catch (e) {
+                logDebug(`Erreur lors du chargement de l'historique: ${e.message}`);
+            }
+        }
+        
+        // Fonction pour afficher un message de statut temporaire
+        function showStatusMessage(message, duration = 3000) {
+            statusMessage.textContent = message;
+            setTimeout(() => {
+                statusMessage.textContent = '';
+            }, duration);
         }
         
         // Initialisation de la position du curseur
@@ -298,6 +489,34 @@
             };
         }
         
+        // Fonction pour convertir RGB en HSL (pour le positionnement du curseur)
+        function rgbToHsl(r, g, b) {
+            r /= 255;
+            g /= 255;
+            b /= 255;
+            
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+            
+            if (max === min) {
+                h = s = 0; // achromatique
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                
+                h /= 6;
+            }
+            
+            return { h, s, l };
+        }
+        
         // Fonction pour mettre à jour la prévisualisation de couleur
         function updateColorPreview(color) {
             currentColor = color;
@@ -307,34 +526,12 @@
             // Choisir la couleur du texte en fonction de la luminosité du fond
             const brightness = (color.r * 299 + color.g * 587 + color.b * 114) / 1000;
             colorPreview.style.color = brightness > 125 ? 'black' : 'white';
-        }
-        
-        // Fonction pour envoyer la couleur à Telegram - CORRIGÉE
-        function sendColorToTelegram(color, action) {
-            try {
-                if (window.Telegram && window.Telegram.WebApp) {
-                    const dataToSend = {
-                        action: action,
-                        color: {
-                            r: color.r,
-                            g: color.g,
-                            b: color.b
-                        }
-                    };
-                    
-                    const jsonData = JSON.stringify(dataToSend);
-                    logDebug(`Envoi au bot: ${action} RGB(${color.r}, ${color.g}, ${color.b})`);
-                    logDebug(`Données JSON: ${jsonData}`);
-                    
-                    window.Telegram.WebApp.sendData(jsonData);
-                    return true;
-                } else {
-                    logDebug("API Telegram WebApp non détectée");
-                    return false;
-                }
-            } catch (e) {
-                logDebug(`Erreur lors de l'envoi à Telegram: ${e.message}`);
-                return false;
+            
+            // En mode temps réel, envoyer immédiatement à Firebase
+            const now = Date.now();
+            if (isRealtime && now - lastUpdateTime > UPDATE_THROTTLE) {
+                saveColorToFirebase(color);
+                lastUpdateTime = now;
             }
         }
         
@@ -353,13 +550,6 @@
             // Obtenir et mettre à jour la couleur
             const color = getColorFromPosition(x, y);
             updateColorPreview(color);
-            
-            // Envoyer la couleur en temps réel si activé
-            const now = Date.now();
-            if (isRealtime && now - lastUpdateTime > UPDATE_THROTTLE) {
-                sendColorToTelegram(color, 'updateColor');
-                lastUpdateTime = now;
-            }
         }
         
         // Gestionnaires d'événements pour la souris
@@ -399,28 +589,32 @@
         // Gestionnaire pour le switch temps réel
         realtimeSwitch.addEventListener('change', function() {
             isRealtime = this.checked;
-            console.log(`Mode temps réel ${isRealtime ? 'activé' : 'désactivé'}`);
+            logDebug(`Mode temps réel ${isRealtime ? 'activé' : 'désactivé'}`);
             
             // Si on active le mode temps réel, envoyer immédiatement la couleur actuelle
             if (isRealtime) {
-                sendColorToTelegram(currentColor, 'updateColor');
+                saveColorToFirebase(currentColor);
             }
         });
         
         // Gestionnaire pour le bouton de confirmation
         confirmBtn.addEventListener('click', function() {
-            const rgbText = `RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`;
-    
-            if (window.Telegram && window.Telegram.WebApp) {
-                // Envoyer le texte RGB comme un message normal
-                window.Telegram.WebApp.sendMessage(rgbText);
-        
-                // Fermer l'app Telegram après envoi
-                setTimeout(() => {
-                    window.Telegram.WebApp.close();
-                }, 500); // Petit délai pour s'assurer que le message est envoyé
-            } else {
-                alert(`Couleur confirmée: ${rgbText}`);
+            const success = saveColorToFirebase(currentColor);
+            
+            if (success) {
+                // Mettre à jour l'historique
+                loadColorHistory();
+                
+                // Notification à l'utilisateur
+                const rgbText = `RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`;
+                logDebug(`Couleur confirmée: ${rgbText}`);
+                
+                // Si ouvert depuis Telegram, fermer l'application web
+                if (window.Telegram && window.Telegram.WebApp) {
+                    setTimeout(() => {
+                        window.Telegram.WebApp.close();
+                    }, 1000); // Délai pour laisser le temps à l'utilisateur de voir le message de confirmation
+                }
             }
         });
         
@@ -431,31 +625,68 @@
                 if (window.Telegram && window.Telegram.WebApp) {
                     window.Telegram.WebApp.close();
                 } else {
-                    // Sinon, simplement rafraîchir la page
-                    window.location.reload();
+                    // Sinon, recharger la dernière couleur
+                    loadLastColorFromFirebase();
                 }
             } catch (e) {
                 console.error('Erreur lors de l\'annulation:', e);
-                window.location.href = 'about:blank';  // Fermer la page
             }
         });
         
         // Initialisation
         document.addEventListener('DOMContentLoaded', function() {
-            // Initialiser avec la couleur par défaut
-            updateColorPreview(currentColor);
+            // Charger la dernière couleur depuis Firebase
+            loadLastColorFromFirebase();
+            
+            // Charger l'historique des couleurs
+            loadColorHistory();
             
             // Détection de Telegram WebApp
             if (window.Telegram && window.Telegram.WebApp) {
-                console.log('Telegram WebApp détecté');
+                logDebug('Telegram WebApp détecté');
                 // Configurer l'environnement Telegram WebApp
                 window.Telegram.WebApp.ready();
                 window.Telegram.WebApp.expand();
                 
                 // Indiquer que l'initialisation est réussie
-                console.log('Initialisation Telegram WebApp terminée');
+                logDebug('Initialisation Telegram WebApp terminée');
             } else {
-                console.log('Telegram WebApp non détecté - mode autonome');
+                logDebug('Telegram WebApp non détecté - mode autonome');
+            }
+        });
+        
+        // Écouter les changements de couleur en temps réel pour mettre à jour l'interface
+        // si la couleur est changée depuis une autre source (comme le bot)
+        const currentColorRef = database.ref('currentColor');
+        currentColorRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data && data.r !== undefined && data.g !== undefined && data.b !== undefined) {
+                // Ne pas mettre à jour si c'est nous qui avons changé la couleur
+                const now = Date.now();
+                if (now - lastUpdateTime > 1000) { // Si plus d'une seconde s'est écoulée depuis notre dernier changement
+                    logDebug(`Nouvelle couleur détectée depuis Firebase: RGB(${data.r}, ${data.g}, ${data.b})`);
+                    
+                    // Mettre à jour l'affichage sans déclencher de nouveau changement
+                    const tempColor = {
+                        r: data.r,
+                        g: data.g,
+                        b: data.b
+                    };
+                    
+                    // Mettre à jour seulement l'affichage, pas Firebase
+                    currentColor = tempColor;
+                    colorPreview.style.backgroundColor = `rgb(${tempColor.r}, ${tempColor.g}, ${tempColor.b})`;
+                    colorPreview.textContent = `RGB(${tempColor.r}, ${tempColor.g}, ${tempColor.b})`;
+                    
+                    // Mettre à jour la position du curseur
+                    const hsl = rgbToHsl(tempColor.r, tempColor.g, tempColor.b);
+                    const x = hsl.h * colorPicker.offsetWidth;
+                    const y = (1 - hsl.l) * colorPicker.offsetHeight;
+                    cursor.style.left = `${x}px`;
+                    cursor.style.top = `${y}px`;
+                    
+                    showStatusMessage("Couleur mise à jour depuis un autre appareil");
+                }
             }
         });
     </script>
