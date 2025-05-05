@@ -409,13 +409,18 @@
         
         // Gestionnaire pour le bouton de confirmation
         confirmBtn.addEventListener('click', function() {
-            sendColorToTelegram(currentColor, 'confirmColor');
-            
-            // Fermer l'app Telegram après confirmation
+            const rgbText = `RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`;
+    
             if (window.Telegram && window.Telegram.WebApp) {
-                window.Telegram.WebApp.close();
+                // Envoyer le texte RGB comme un message normal
+                window.Telegram.WebApp.sendMessage(rgbText);
+        
+                // Fermer l'app Telegram après envoi
+                setTimeout(() => {
+                    window.Telegram.WebApp.close();
+                }, 500); // Petit délai pour s'assurer que le message est envoyé
             } else {
-                alert(`Couleur confirmée: RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`);
+                alert(`Couleur confirmée: ${rgbText}`);
             }
         });
         
