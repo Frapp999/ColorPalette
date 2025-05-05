@@ -168,6 +168,21 @@
         input:checked + .slider:before {
             transform: translateX(26px);
         }
+        
+        /* Ajout d'une zone pour les messages de débogage */
+        .debug-container {
+            width: 90%;
+            max-width: 500px;
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 12px;
+            max-height: 100px;
+            overflow-y: auto;
+            display: none; /* Caché par défaut */
+        }
     </style>
 </head>
 <body>
@@ -196,6 +211,9 @@
         <button id="confirm-btn">Confirmer</button>
         <button id="cancel-btn">Annuler</button>
     </div>
+    
+    <!-- Zone de débogage cachée -->
+    <div class="debug-container" id="debug-container"></div>
 
     <script>
         // Variables pour le gestionnaire d'événements tactiles
@@ -205,6 +223,7 @@
         let confirmBtn = document.getElementById('confirm-btn');
         let cancelBtn = document.getElementById('cancel-btn');
         let realtimeSwitch = document.getElementById('realtime-switch');
+        let debugContainer = document.getElementById('debug-container');
         
         // Variables pour la couleur
         let currentColor = { r: 255, g: 0, b: 0 };
@@ -212,6 +231,23 @@
         let isRealtime = false;
         let lastUpdateTime = 0;
         const UPDATE_THROTTLE = 100; // Limiter les mises à jour à 100ms
+        
+        // Fonction pour logger les informations de débogage
+        function logDebug(message) {
+            console.log(message);
+            
+            // Détecter si le mode développement est actif (ajouter ?debug=1 à l'URL)
+            const urlParams = new URLSearchParams(window.location.search);
+            const debugMode = urlParams.get('debug') === '1';
+            
+            if (debugMode && debugContainer) {
+                debugContainer.style.display = 'block';
+                const logEntry = document.createElement('div');
+                logEntry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+                debugContainer.appendChild(logEntry);
+                debugContainer.scrollTop = debugContainer.scrollHeight;
+            }
+        }
         
         // Initialisation de la position du curseur
         cursor.style.left = '0%';
@@ -273,25 +309,33 @@
             colorPreview.style.color = brightness > 125 ? 'black' : 'white';
         }
         
-        // Fonction pour envoyer la couleur à Telegram
+        // Fonction pour envoyer la couleur à Telegram - CORRIGÉE
         function sendColorToTelegram(color, action) {
             try {
                 if (window.Telegram && window.Telegram.WebApp) {
-                    console.log(`Envoi au bot: ${action} RGB(${color.r}, ${color.g}, ${color.b})`);
-                    window.Telegram.WebApp.sendData(JSON.stringify({
+                    const dataToSend = {
                         action: action,
                         color: {
                             r: color.r,
                             g: color.g,
                             b: color.b
                         }
-                    }));
+                    };
+                    
+                    const jsonData = JSON.stringify(dataToSend);
+                    logDebug(`Envoi au bot: ${action} RGB(${color.r}, ${color.g}, ${color.b})`);
+                    logDebug(`Données JSON: ${jsonData}`);
+                    
+                    window.Telegram.WebApp.sendData(jsonData);
                     return true;
+                } else {
+                    logDebug("API Telegram WebApp non détectée");
+                    return false;
                 }
             } catch (e) {
-                console.error('Erreur lors de l\'envoi à Telegram:', e);
+                logDebug(`Erreur lors de l'envoi à Telegram: ${e.message}`);
+                return false;
             }
-            return false;
         }
         
         // Fonction pour gérer le déplacement du curseur
